@@ -1,5 +1,7 @@
 from database import SessionLocal, Project, init_db
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
 import ctypes
 import os
 
@@ -13,80 +15,88 @@ lib = ctypes.CDLL(LIB_PATH)
 lib.valid_name.argtypes = [ctypes.c_char_p]
 lib.valid_name.restype = ctypes.c_bool
 
-lib.hash_name.argtypes = [ctypes.c_char_p]
-lib.hash_name.restype = ctypes.c_uint
+
+# --- Request / Response Models ---
+
+class ProjectCreate(BaseModel):
+    name: str
+
+class ProjectUpdate(BaseModel):
+    name: str
+
+class ProjectResponse(BaseModel):
+    id: int
+    name: str
+
+    model_config = {"from_attributes": True}
+
+
+# --- DB Dependency ---
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+# --- Routes ---
 
 @app.get("/")
 def root():
     return {"status": "ProjectVault API running"}
 
-@app.post("/projects")
-def create_project(name: str):
-    if not lib.valid_name(name.encode()):
+
+@app.post("/projects", response_model=ProjectResponse, status_code=201)
+def create_project(body: ProjectCreate, db: Session = Depends(get_db)):
+    if not lib.valid_name(body.name.encode()):
         raise HTTPException(status_code=400, detail="Invalid project name")
 
-    pid = lib.hash_name(name.encode())
-
-    db = SessionLocal()
-
-    existing = db.query(Project).filter(Project.id == pid).first()
-    if existing:
-        db.close()
+    if db.query(Project).filter(Project.name == body.name).first():
         raise HTTPException(status_code=409, detail="Project already exists")
 
-    project = Project(id=pid, name=name)
+    project = Project(name=body.name)
     db.add(project)
     db.commit()
-    db.close()
+    db.refresh(project)
+    return project
 
-    return {"id": pid, "name": name}
 
-@app.get("/projects")
-def list_projects():
-    db = SessionLocal()
-    projects = db.query(Project).all()
-    db.close()
-    return [{"id": p.id, "name": p.name} for p in projects]
+@app.get("/projects", response_model=list[ProjectResponse])
+def list_projects(skip: int = 0, limit: int = 20, db: Session = Depends(get_db)):
+    return db.query(Project).offset(skip).limit(limit).all()
 
-@app.get("/projects/{pid}")
-def get_project(pid: int):
-    db = SessionLocal()
+
+@app.get("/projects/{pid}", response_model=ProjectResponse)
+def get_project(pid: int, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == pid).first()
-    db.close()
-
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    return project
 
-    return {"id": project.id, "name": project.name}
 
-@app.put("/projects/{pid}")
-def update_project(pid: int, name: str):
-    if not lib.valid_name(name.encode()):
+@app.put("/projects/{pid}", response_model=ProjectResponse)
+def update_project(pid: int, body: ProjectUpdate, db: Session = Depends(get_db)):
+    if not lib.valid_name(body.name.encode()):
         raise HTTPException(status_code=400, detail="Invalid project name")
 
-    db = SessionLocal()
     project = db.query(Project).filter(Project.id == pid).first()
-
     if not project:
-        db.close()
         raise HTTPException(status_code=404, detail="Project not found")
 
-    project.name = name
+    project.name = body.name
     db.commit()
-    db.close()
+    db.refresh(project)
+    return project
 
-    return {"id": pid, "name": name}
+
 @app.delete("/projects/{pid}")
-def delete_project(pid: int):
-    db = SessionLocal()
+def delete_project(pid: int, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == pid).first()
-
     if not project:
-        db.close()
         raise HTTPException(status_code=404, detail="Project not found")
 
     db.delete(project)
     db.commit()
-    db.close()
-
     return {"deleted": pid}

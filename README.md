@@ -10,7 +10,7 @@ A cross-language CRUD backend built with FastAPI, SQLite, and a native C++ share
 
 ## Features
 - Full RESTful CRUD API
-- Deterministic ID generation via C++ hashing
+- Name validation via C++ shared library
 - Persistent storage using SQLite
 - Interactive API docs via Swagger
 
@@ -22,3 +22,11 @@ source venv/bin/activate
 pip install -r requirements.txt
 g++ -shared -fPIC cpp/project_utils.cpp -o libproject.so
 uvicorn main:app --reload
+```
+
+## Run Tests
+
+```bash
+source venv/bin/activate
+pytest tests/ -v
+```
