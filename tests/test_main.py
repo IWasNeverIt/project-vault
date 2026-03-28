@@ -4,8 +4,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from database import Base
-from main import app, get_db
+from database import Base, get_db
+from main import app
 
 TEST_DATABASE_URL = "sqlite:///:memory:"
 
@@ -48,6 +48,13 @@ def test_create_project():
     data = r.json()
     assert data["name"] == "my-project"
     assert "id" in data
+    assert "created_at" in data
+
+
+def test_create_project_with_description():
+    r = client.post("/projects", json={"name": "my-project", "description": "A test project"})
+    assert r.status_code == 201
+    assert r.json()["description"] == "A test project"
 
 
 def test_create_duplicate_project():
@@ -63,6 +70,11 @@ def test_create_invalid_name():
 
 def test_create_empty_name():
     r = client.post("/projects", json={"name": ""})
+    assert r.status_code == 400
+
+
+def test_create_name_too_long():
+    r = client.post("/projects", json={"name": "a" * 65})
     assert r.status_code == 400
 
 
@@ -99,7 +111,12 @@ def test_update_project():
     r = client.put(f"/projects/{created['id']}", json={"name": "new-name"})
     assert r.status_code == 200
     assert r.json()["name"] == "new-name"
-    assert r.json()["id"] == created["id"]
+
+
+def test_update_retains_id():
+    created = client.post("/projects", json={"name": "original"}).json()
+    updated = client.put(f"/projects/{created['id']}", json={"name": "renamed"}).json()
+    assert updated["id"] == created["id"]
 
 
 def test_update_invalid_name():
@@ -116,8 +133,7 @@ def test_update_nonexistent_project():
 def test_delete_project():
     created = client.post("/projects", json={"name": "to-delete"}).json()
     r = client.delete(f"/projects/{created['id']}")
-    assert r.status_code == 200
-    assert r.json()["deleted"] == created["id"]
+    assert r.status_code == 204
 
 
 def test_delete_nonexistent_project():
