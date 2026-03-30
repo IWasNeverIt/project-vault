@@ -29,6 +29,16 @@ class ProjectResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SearchResult(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+    created_at: datetime
+    score: int
+
+    model_config = {"from_attributes": True}
+
+
 @router.post("", response_model=ProjectResponse, status_code=201)
 def create_project(body: ProjectCreate, db: Session = Depends(get_db)):
     if not lib.valid_name(body.name.encode()):
@@ -47,6 +57,25 @@ def create_project(body: ProjectCreate, db: Session = Depends(get_db)):
 @router.get("", response_model=list[ProjectResponse])
 def list_projects(skip: int = 0, limit: int = 20, db: Session = Depends(get_db)):
     return db.query(Project).offset(skip).limit(limit).all()
+
+
+@router.get("/search", response_model=list[SearchResult])
+def search_projects(q: str, limit: int = 10, db: Session = Depends(get_db)):
+    projects = db.query(Project).all()
+    results = sorted(
+        projects,
+        key=lambda p: lib.levenshtein(q.encode(), p.name.encode())
+    )
+    return [
+        SearchResult(
+            id=p.id,
+            name=p.name,
+            description=p.description,
+            created_at=p.created_at,
+            score=lib.levenshtein(q.encode(), p.name.encode()),
+        )
+        for p in results[:limit]
+    ]
 
 
 @router.get("/{pid}", response_model=ProjectResponse)

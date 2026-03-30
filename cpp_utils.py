@@ -6,3 +6,6 @@ lib = ctypes.CDLL(LIB_PATH)
 
 lib.valid_name.argtypes = [ctypes.c_char_p]
 lib.valid_name.restype = ctypes.c_bool
+
+lib.levenshtein.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+lib.levenshtein.restype = ctypes.c_uint
